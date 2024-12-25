@@ -1,0 +1,95 @@
+import torch
+from transformers import BertTokenizer, BertForTokenClassification, pipeline
+from transformers import BartForConditionalGeneration, BartTokenizer
+from sklearn.metrics import precision_recall_fscore_support
+from datasets import load_dataset
+import numpy as np
+
+# --- Information Extraction using BERT (NER Task) ---
+# Load pre-trained BERT model for NER
+ner_model_name = 'dbmdz/bert-large-cased-finetuned-conll03-english'
+tokenizer_ner = BertTokenizer.from_pretrained(ner_model_name)
+model_ner = BertForTokenClassification.from_pretrained(ner_model_name)
+nlp_ner = pipeline("ner", model=model_ner, tokenizer=tokenizer_ner)
+
+# --- Literature Summarization using BART ---
+# Load pre-trained BART model and tokenizer for summarization
+summarization_model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
+summarization_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
+
+# Sample text for Information Extraction (NER)
+text_ie = """
+In recent advancements, Machine learning (ML) is widely used in autonomous vehicles, healthcare predictions, and business analytics. 
+Deep learning methods like convolutional neural networks (CNNs) are used to extract features from images in computer vision.
+"""
+
+# Sample long text for Literature Summarization
+long_text_ls = """
+The rise of quantum computing has led to new algorithms and processing techniques that could drastically improve computational speed. 
+Researchers are exploring quantum entanglement and superposition to solve problems in cryptography, optimization, and artificial intelligence. 
+These breakthroughs could potentially lead to the development of faster, more secure encryption systems and optimization methods for large datasets.
+"""
+
+# --- Information Extraction (NER) --- 
+# Manually define the correct entities for evaluation (for simplicity)
+# You should replace these with ground truth labels for a real dataset
+ground_truth_entities = [
+    {"word": "Machine", "label": "B-LOC"},
+    {"word": "learning", "label": "B-MISC"},
+    {"word": "ML", "label": "B-ORG"},
+    {"word": "convolutional", "label": "B-MISC"},
+    {"word": "networks", "label": "B-MISC"}
+]
+
+# Perform NER using BERT
+entities = nlp_ner(text_ie)
+
+# Prepare for Precision, Recall, and F1-Score calculation
+predicted_labels = [entity['entity'] for entity in entities]
+true_labels = [entity['label'] for entity in ground_truth_entities]
+
+# Calculate Precision, Recall, and F1-Score
+precision, recall, f1, _ = precision_recall_fscore_support(true_labels, predicted_labels, average='micro')
+
+# Print the NER output
+print("Information Extraction (NER):")
+for entity in entities:
+    print(f"Entity: {entity['word']}, Label: {entity['entity']}, Confidence: {entity['score']}")
+
+# Print Precision, Recall, and F1-Score for NER
+print("\nPrecision, Recall, and F1-Score for NER:")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1-Score: {f1:.4f}")
+
+# --- Literature Summarization (Abstractive) ---
+# Tokenize input text for summarization
+inputs_ls = summarization_tokenizer(long_text_ls, return_tensors="pt", max_length=1024, truncation=True)
+summary_ids = summarization_model.generate(inputs_ls['input_ids'], max_length=150, num_beams=4, early_stopping=True)
+
+# Decode and print the summary
+summary = summarization_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+print("\nLiterature Summarization (Abstractive):")
+print(summary)
+
+# --- Evaluation of Summarization (ROUGE Score) ---
+# Manually define the ground truth summary for comparison
+ground_truth_summary = """
+Quantum computing has led to new algorithms for improving computational speed. 
+Researchers are exploring quantum entanglement and superposition to improve cryptography and optimization.
+"""
+
+# ROUGE score function
+def compute_rouge_score(prediction, reference):
+    from rouge_score import rouge_scorer
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2'], use_stemmer=True)
+    scores = scorer.score(reference, prediction)
+    return scores
+
+# Compute ROUGE scores
+rouge_scores = compute_rouge_score(summary, ground_truth_summary)
+
+# Print ROUGE-1 and ROUGE-2 scores
+print("\nROUGE-1 and ROUGE-2 scores for Summarization:")
+print(f"ROUGE-1: {rouge_scores['rouge1']}")
+print(f"ROUGE-2: {rouge_scores['rouge2']}")
